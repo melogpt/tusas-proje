@@ -1,0 +1,25 @@
+# ── Uygulama ──────────────────────────────────────────────────────────────────
+PyQt5
+SpeechRecognition
+pyttsx3
+pyaudio
+
+# ── Test ──────────────────────────────────────────────────────────────────────
+pytest
+pytest-qt
+
+# ── AI Vision ─────────────────────────────────────────────────────────────────
+numpy
+opencv-python-headless
+Pillow
+
+# ── ML Eğitimi ────────────────────────────────────────────────────────────────
+# Seçenek 1 — YOLO (önerilen):
+ultralytics
+
+# Seçenek 2 — PyTorch (ultralytics yoksa otomatik devreye girer):
+# torch
+# torchvision
+
+# ── PDF Rapor ─────────────────────────────────────────────────────────────────
+reportlab
