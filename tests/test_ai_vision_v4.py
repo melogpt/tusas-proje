@@ -1658,6 +1658,8 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
 <code>python run_tests.py</code> çalıştırın.</div></div></body></html>""")
 
     # ── Raporu OTOMATIK aç ────────────────────────────────────────────────────
+    if os.environ.get("TUSAS_NO_OPEN_REPORT") == "1":
+        return
     if not os.path.exists(html_path):
         print(f"  [!] Rapor dosyası bulunamadı: {html_path}")
         return

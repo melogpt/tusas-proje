@@ -221,9 +221,18 @@ def run_scenario_logic(pencere: FlightDisplay, scenario: FaultScenario) -> Tuple
     Çözüm: elapsed'ı büyük bir değere set edip, ardından FaultGate'deki
     tüm mevcut state'lerin start_ms'ini 0'a çekerek farkı garantilemek.
     """
+    class FrozenDict(dict):
+        def __init__(self, original, frozen_keys):
+            super().__init__(original)
+            self.frozen_keys = frozen_keys
+        def __setitem__(self, key, value):
+            if key not in self.frozen_keys:
+                super().__setitem__(key, value)
+
     # Parametreleri enjekte et
+    pencere.vals = FrozenDict(pencere.vals, scenario.inject.keys())
     for key, val in scenario.inject.items():
-        pencere.vals[key] = val
+        dict.__setitem__(pencere.vals, key, val)
 
     # Invalid parametreleri işaretle
     for key in scenario.invalid_params:
@@ -233,8 +242,6 @@ def run_scenario_logic(pencere: FlightDisplay, scenario: FaultScenario) -> Tuple
     pencere.elapsed = pencere.elapsed.addSecs(max(scenario.time_advance_secs, 10))
 
     # İlk tick — FaultGate'e state'leri kaydettirir (start_ms = now_ms)
-    for key, val in scenario.inject.items():
-        pencere.vals[key] = val
     pencere._tick_sim()
 
     # FaultGate'deki tüm aktif state'lerin start_ms'ini 0'a çek
@@ -243,25 +250,12 @@ def run_scenario_logic(pencere: FlightDisplay, scenario: FaultScenario) -> Tuple
         if st.active:
             st.start_ms = 0
 
-    # Sonraki tick(ler) — gate açık, ama _tick_sim bazı parametrelerin
-    # üzerine yazıyor (örn. ENV_CABALT FLT_ALT'tan hesaplanıyor).
-    # Çözüm: _tick_sim'i wrap edip her tick SONRASI inject'i yeniden uygula.
-    original_tick = pencere._tick_sim.__func__
-
-    def _patched_tick(self):
-        original_tick(self)
-        # _tick_sim'in üzerine yazdığı parametreleri geri yükle
-        for key, val in scenario.inject.items():
-            self.vals[key] = val
-
-    import types
-    pencere._tick_sim = types.MethodType(_patched_tick, pencere)
-
+    # Sonraki tick(ler) — gate açık, FrozenDict değerleri koruyor
     for _ in range(max(scenario.tick_count, 2)):
         pencere._tick_sim()
 
-    # Patch'i geri al
-    pencere._tick_sim = types.MethodType(original_tick, pencere)
+    # Dictionary'i eski haline getir
+    pencere.vals = dict(pencere.vals)
 
     QApplication.processEvents()
     time.sleep(0.1)
@@ -614,6 +608,8 @@ def pytest_sessionfinish(session, exitstatus):
         _save_results(open_browser=False)
 
     # Tarayici her durumda ac — Windows / macOS / Linux
+    if os.environ.get("TUSAS_NO_OPEN_REPORT") == "1":
+        return
     try:
         import webbrowser
         webbrowser.open(f"file://{os.path.abspath(html_path)}")

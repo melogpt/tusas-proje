@@ -128,7 +128,7 @@ class FlightDisplay(QMainWindow):
         box = make_panel("STATUS")
         g = QGridLayout(box)
         g.addWidget(make_label("WOW"), 0, 0)
-        self.lbl_wow = make_label("AIR", color="#FFFF00", bold=True)
+        self.lbl_wow = make_label("AIR", color="#00FF66", bold=True)
         g.addWidget(self.lbl_wow, 0, 1, alignment=Qt.AlignRight)
         g.addWidget(make_label("PITOT HEAT"), 1, 0)
         self.lbl_pitot = make_label("ON", color="#00FF66", bold=True)
@@ -148,7 +148,7 @@ class FlightDisplay(QMainWindow):
         self.lbl_fd = make_label("ARMED", color="#00FF66", bold=True)
         g.addWidget(self.lbl_fd, 1, 1, alignment=Qt.AlignRight)
         g.addWidget(make_label("MASTER CAUTION"), 2, 0)
-        self.lbl_mc = make_label("OFF", color="#00FF66", bold=True)
+        self.lbl_mc = make_label("OFF", color="#555555", bold=True)
         g.addWidget(self.lbl_mc, 2, 1, alignment=Qt.AlignRight)
         return box
 
@@ -650,8 +650,13 @@ class FlightDisplay(QMainWindow):
         self.vals["COM1_FREQ"] = clamp(self.vals["COM1_FREQ"] + random.uniform(-0.01, 0.01), 118.0, 137.0)
         self.vals["COM2_FREQ"] = clamp(self.vals["COM2_FREQ"] + random.uniform(-0.01, 0.01), 118.0, 137.0)
 
-        self.lbl_wow.setText("AIR" if random.random() > 0.05 else "GROUND")
-        self.lbl_ap.setText("ON" if random.random() > 0.08 else "OFF")
+        is_air = random.random() > 0.05
+        self.lbl_wow.setText("AIR" if is_air else "GROUND")
+        self.lbl_wow.setStyleSheet(f"color:{'#00FF66' if is_air else '#FFFFFF'};font-weight:bold;")
+        
+        is_ap_on = random.random() > 0.08
+        self.lbl_ap.setText("ON" if is_ap_on else "OFF")
+        self.lbl_ap.setStyleSheet(f"color:{'#00FF66' if is_ap_on else '#555555'};font-weight:bold;")
 
         now = self._now_ms()
 
@@ -739,7 +744,7 @@ class FlightDisplay(QMainWindow):
             self.lbl_mc.setStyleSheet("color:#FFB000;font-family:Consolas, monospace;font-weight:bold;")
         else:
             self.lbl_mc.setText("OFF")
-            self.lbl_mc.setStyleSheet("color:#00FF66;font-family:Consolas, monospace;font-weight:bold;")
+            self.lbl_mc.setStyleSheet("color:#555555;font-family:Consolas, monospace;font-weight:bold;")
 
         self._apply_ui()
         self._render_wca(now)

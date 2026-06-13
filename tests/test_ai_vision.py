@@ -608,6 +608,8 @@ def pytest_sessionfinish(session, exitstatus):
         _save_results(open_browser=False)
 
     # Tarayici her durumda ac
+    if os.environ.get("TUSAS_NO_OPEN_REPORT") == "1":
+        return
     try:
         os.startfile(html_path)
     except Exception:

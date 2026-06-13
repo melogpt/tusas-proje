@@ -52,66 +52,103 @@ def open_report():
             pass
 
     if opened:
-        print(f"\n  🌐 Rapor açıldı: {REPORT_HTML}")
+        try:
+            print(f"\n  [HTML] Rapor acildi: {REPORT_HTML}")
+        except Exception:
+            pass
     else:
-        print(f"\n  Manuel açın: {REPORT_HTML}")
+        try:
+            print(f"\n  Manuel acin: {REPORT_HTML}")
+        except Exception:
+            pass
+
+
+def _ensure_training_data(min_total=30):
+    """Eğitim için yeterli veri yoksa sentetik üretip dengeler."""
+    try:
+        from ml_trainer_v3 import dataset_summary, generate_synthetic_data
+    except Exception as e:
+        print(f"  [ML] ml_trainer içe aktarılamadı: {e}")
+        return False
+    s = dataset_summary()
+    need = (s["total"] < min_total) or (min(s["NOMINAL"], s["CAUTION"], s["WARNING"]) == 0)
+    if need:
+        print(f"  [ML] Veri yetersiz/dengesiz (total={s['total']}) → sentetik veri üretiliyor")
+        generate_synthetic_data(40)
+    return True
+
+
+def run_real_training():
+    """Testten sonra modeli GERÇEKTEN eğit (YOLO→PyTorch→sklearn sırası)."""
+    print("\n" + "=" * 60)
+    print("  ML — Gerçek Model Eğitimi")
+    print("=" * 60)
+    if not _ensure_training_data():
+        return
+    try:
+        from ml_trainer_v3 import train_model, predict, MODEL_DIR
+        mp = train_model(fast=True)
+        print(f"  [ML] Egitilen model: {mp}")
+        # Hızlı doğrulama: bir tahmin çalıştır
+        import glob
+        val = glob.glob(os.path.join(ROOT, "ml_dataset", "images", "val", "*.png"))
+        if val:
+            print(f"  [PREDICT] Ornek tahmin: {predict(val[0])}")
+    except Exception as e:
+        print(f"  [ML] Eğitim atlandı/başarısız: {type(e).__name__}: {e}")
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="TUSAS TestLab — Kapsamlı Local Test Çalıştırıcı"
     )
-    parser.add_argument(
-        "--category",
-        metavar="CAT",
-        help="Sadece belirli kategoriyi test et (örn. ENGINE, FUEL, COLOR)",
-    )
-    parser.add_argument(
-        "--scenario",
-        metavar="ID",
-        help="Tek senaryo çalıştır (örn. ENG_001, COLOR_002)",
-    )
-    parser.add_argument(
-        "--v3",
-        action="store_true",
-        help="v3 test dosyasını çalıştır (eski)",
-    )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Detaylı çıktı",
-    )
+    parser.add_argument("--category", metavar="CAT",
+                        help="Sadece belirli kategoriyi test et (örn. ENGINE, FUEL, COLOR)")
+    parser.add_argument("--scenario", metavar="ID",
+                        help="Tek senaryo çalıştır (örn. ENG_001, COLOR_002)")
+    parser.add_argument("--v4", action="store_true",
+                        help="Eski v4 test dosyasını çalıştır (sahte enjeksiyonlu)")
+    parser.add_argument("--v3", action="store_true",
+                        help="v3 test dosyasını çalıştır (eski)")
+    parser.add_argument("--inject-faults", action="store_true",
+                        help="Dedektör öz-testi: bilinen hatalar enjekte et, test yakalamalı")
+    parser.add_argument("--no-train", action="store_true",
+                        help="Testten sonra model eğitimini atla")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Detaylı çıktı")
     args = parser.parse_args()
 
     # ── Test dosyası seçimi ────────────────────────────────────────────────────
     if args.v3:
         test_file = os.path.join(ROOT, "tests", "test_ai_vision_v3.py")
-        print("  [v3] Eski test dosyası kullanılıyor: test_ai_vision_v3.py")
-    else:
+        print("  [v3] Eski test dosyası: test_ai_vision_v3.py")
+    elif args.v4:
         test_file = os.path.join(ROOT, "tests", "test_ai_vision_v4.py")
+        print("  [v4] Eski test dosyası: test_ai_vision_v4.py")
+    else:
+        test_file = os.path.join(ROOT, "tests", "test_real_vision.py")
 
     # ── pytest komut inşası ───────────────────────────────────────────────────
-    cmd = [
-        sys.executable, "-m", "pytest",
-        test_file,
-        "-s",           # print çıktısını göster
-        "--tb=no",      # traceback kısalt (rapor var)
-    ]
-
-    if args.verbose:
-        cmd.append("-v")
-    else:
-        cmd.append("-q")
-
+    cmd = [sys.executable, "-m", "pytest", test_file, "-s", "--tb=short",
+           "-p", "no:cacheprovider"]
+    cmd.append("-v" if args.verbose else "-q")
     if args.scenario:
         cmd.extend(["-k", args.scenario])
     elif args.category:
         cmd.extend(["-k", args.category])
+    if args.inject_faults:
+        cmd.append("--inject-faults")
 
-    # ── Çalıştır ──────────────────────────────────────────────────────────────
+    # Headless ortamda da çalışsın
+    env = dict(os.environ)
+    env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env["TUSAS_NO_OPEN_REPORT"] = "1"
+
     print("\n" + "=" * 60)
-    print("  TUSAS TestLab v4 — Test Başlatılıyor")
-    print("  Mod: Tam Yerel (Logic + Görsel + ML)")
+    print("  TUSAS TestLab — Test Başlatılıyor")
+    mode = "DEDEKTÖR ÖZ-TESTİ (--inject-faults)" if args.inject_faults \
+           else "Gerçek Yerel Test (Piksel + Mantık + WCA)"
+    print(f"  Mod: {mode}")
     if args.scenario:
         print(f"  Filtre: Senaryo = {args.scenario}")
     elif args.category:
@@ -119,15 +156,28 @@ def main():
     print("=" * 60 + "\n")
 
     t_start = time.time()
-    result = subprocess.run(cmd, cwd=ROOT)
+    result = subprocess.run(cmd, cwd=ROOT, env=env)
     elapsed = int(time.time() - t_start)
-
     print(f"\n  Süre: {elapsed}s  |  Çıkış kodu: {result.returncode}")
 
+    # ── Gerçek ML eğitimi (normal modda, varsayılan açık) ──────────────────────
+    if not args.inject_faults and not args.no_train and not args.v3 and not args.v4:
+        run_real_training()
+        
+        # Eğitim bittikten sonra Model Eğitim Raporunu da aç
+        import glob
+        reports = glob.glob(os.path.join(ROOT, "training_metrics", "*_report.html"))
+        if reports:
+            latest_report = max(reports, key=os.path.getmtime)
+            try:
+                webbrowser.open(f"file:///{latest_report.replace(os.sep, '/')}")
+                print(f"  [HTML] Eğitim Raporu açıldı: {latest_report}")
+            except Exception:
+                pass
+
     # ── Raporu aç ────────────────────────────────────────────────────────────
-    # pytest_sessionfinish zaten açıyor, bu backup için
     if os.path.exists(REPORT_HTML):
-        time.sleep(0.5)  # Dosyanın yazılmasını bekle
+        time.sleep(0.5)
         open_report()
 
     return result.returncode

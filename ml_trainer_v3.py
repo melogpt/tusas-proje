@@ -260,7 +260,7 @@ def generate_synthetic_data(n_per_class: int = 50) -> int:
             )))
             count += 1
 
-        print(f"  ✅ {cls_name}: {n_per_class} görüntü")
+        print(f"  [OK] {cls_name}: {n_per_class} görüntü")
 
     LOG_PATH.write_text(json.dumps(log, indent=2, ensure_ascii=False))
     counts = _count_classes(log)
@@ -371,11 +371,11 @@ def train_model(epochs: int = 50, imgsz: int = 416, fast: bool = False) -> str:
     if fast:
         epochs = 15
         imgsz  = 224
-        print("  ⚡ HIZLI MOD: epochs=15, imgsz=224")
+        print("  [FAST] HIZLI MOD: epochs=15, imgsz=224")
 
     summary = dataset_summary()
     if summary["total"] < 10:
-        print(f"\n  ❌ Yeterli veri yok ({summary['total']} örnek).")
+        print(f"\n  [ERROR] Yeterli veri yok ({summary['total']} örnek).")
         print("  Sentetik veri üretmek için:")
         print("    python ml_trainer_v3.py generate")
         raise RuntimeError("Yetersiz veri")
@@ -383,57 +383,97 @@ def train_model(epochs: int = 50, imgsz: int = 416, fast: bool = False) -> str:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     version = f"tusas_v{ts}"
 
-    print(f"\n{'═'*60}")
-    print(f"  TUSAŞ TestLab — Model Eğitimi  [{ts}]")
+    print(f"\n{'='*60}")
+    print(f"  TUSAŞ TestLab - Model Eğitimi  [{ts}]")
     print(f"  Veri: NOM={summary['NOMINAL']}  CAU={summary['CAUTION']}  WARN={summary['WARNING']}")
 
     # Class weights (imbalance düzeltme)
     weights = _compute_class_weights(_load_log())
     print(f"  Class weights: NOM={weights[0]}  CAU={weights[1]}  WARN={weights[2]}")
-    print(f"{'═'*60}\n")
+    print(f"{'='*60}\n")
 
     n_train, n_val = prepare_splits()
-    print(f"  Split → train={n_train}  val={n_val}  (stratified)")
+    print(f"  Split -> train={n_train}  val={n_val}  (stratified)")
 
     write_yaml()
 
-    # YOLO veya PyTorch
+    # YOLO -> PyTorch -> scikit-learn (ortamda ne varsa gerçekten eğitir)
     try:
         model_path = _train_yolo(version, epochs, imgsz)
     except Exception as e:
-        print(f"  [!] YOLO Hatası: {e} → PyTorch CNN")
-        model_path = _train_pytorch(epochs, imgsz, version, weights)
+        print(f"  [!] YOLO yok/başarısız ({type(e).__name__}) -> PyTorch CNN deneniyor")
+        try:
+            model_path = _train_pytorch(epochs, imgsz, version, weights)
+        except Exception as e2:
+            print(f"  [!] PyTorch yok/başarısız ({type(e2).__name__}) -> scikit-learn RandomForest")
+            model_path = _train_sklearn(version, weights)
 
     metrics = _compute_metrics(model_path)
     _save_metrics(version, metrics, model_path, summary, weights)
 
-    # latest.pt güncelle
-    shutil.copy2(model_path, MODEL_DIR / "latest.pt")
+    # latest.* güncelle (uzantıyı koru → predict doğru backend'i seçer)
+    ext = os.path.splitext(model_path)[1] or ".pt"
+    for ex in [".pt", ".pkl"]:
+        try:
+            p = MODEL_DIR / f"latest{ex}"
+            if p.exists():
+                p.unlink()
+        except:
+            pass
+    shutil.copy2(model_path, MODEL_DIR / f"latest{ext}")
 
     # Rapor üret ve aç
     html_path = _generate_training_report(version, metrics, summary, weights)
     pdf_path  = _generate_pdf_report(version, metrics, summary, weights)
     _open_file(html_path)
 
-    print(f"\n  ✅ Model    : {model_path}")
-    print(f"  📊 HTML    : {html_path}")
-    print(f"  📄 PDF     : {pdf_path}")
+    print(f"\n  [OK] Model    : {model_path}")
+    print(f"  [HTML] HTML    : {html_path}")
+    print(f"  [PDF] PDF     : {pdf_path}")
     return model_path
 
 
 # ─── YOLO EĞİTİMİ ─────────────────────────────────────────────────────────────
 
 def _train_yolo(version, epochs, imgsz) -> str:
+    import shutil
+    import torch
+    cls_data = DATASET_DIR / "cls_data"
+    if cls_data.exists():
+        shutil.rmtree(cls_data)
+    for split in ["train", "val"]:
+        for c in CLASS_NAMES:
+            (cls_data / split / c).mkdir(parents=True, exist_ok=True)
+            
+    for split, img_dir, lbl_dir in [("train", TRAIN_IMG, TRAIN_LBL), ("val", VAL_IMG, VAL_LBL)]:
+        for ip in img_dir.glob("*.png"):
+            lp = lbl_dir / (ip.stem + ".txt")
+            if not lp.exists():
+                continue
+            try:
+                cid = int(lp.read_text().split()[0])
+            except:
+                continue
+            cname = CLASS_NAMES[cid]
+            shutil.copy2(ip, cls_data / split / cname / ip.name)
+
+    if torch.cuda.is_available():
+        device = "0"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
+
+    print(f"  [YOLO] YOLOv8n-cls eğitimi (device={device})...")
     from ultralytics import YOLO
-    print(f"  🚀 YOLOv8n-cls eğitimi...")
     model = YOLO("yolov8n-cls.pt")
     model.train(
-        data=str(DATASET_DIR),
-        epochs=epochs, imgsz=imgsz, batch=8,
-        lr0=0.001, lrf=0.01, patience=12,
+        data=str(cls_data),
+        epochs=min(epochs, 10), imgsz=imgsz, batch=16,
+        lr0=0.001, lrf=0.01, patience=3, amp=True,
         augment=True, fliplr=0.3, hsv_v=0.2, degrees=5.0,
         project=str(MODEL_DIR), name=version,
-        exist_ok=True, verbose=True, plots=True,
+        exist_ok=True, verbose=True, device=device, plots=True,
     )
     best = MODEL_DIR / version / "weights" / "best.pt"
     return str(best if best.exists() else MODEL_DIR / version / "weights" / "last.pt")
@@ -590,10 +630,10 @@ def _train_pytorch(epochs: int, imgsz: int, version: str, class_weights: list) -
         else:
             patience_ctr += 1
             if patience_ctr >= PATIENCE:
-                print(f"\n  ⚡ Early stop @ep{ep}  best={best_val_acc*100:.1f}%")
+                print(f"\n  [EARLY STOP] Early stop @ep{ep}  best={best_val_acc*100:.1f}%")
                 break
 
-    print(f"\n  🏆 Best val accuracy: {best_val_acc*100:.1f}%")
+    print(f"\n  [BEST] Best val accuracy: {best_val_acc*100:.1f}%")
 
     if best_state:
         model.load_state_dict(best_state)
@@ -609,6 +649,132 @@ def _train_pytorch(epochs: int, imgsz: int, version: str, class_weights: list) -
         "history": history,
         "imgsz": imgsz,
     }, str(mp))
+    return str(mp)
+
+
+# ─── SCIKIT-LEARN EĞİTİMİ (her ortamda çalışan gerçek eğitim) ──────────────────
+# ultralytics/torch yoksa bile model GERÇEKTEN eğitilsin diye renk-tabanlı
+# öznitelik çıkarımı + RandomForest sınıflandırıcı. Hızlı, bağımsız, gerçek.
+
+SKLEARN_IMG_SIZE = 64          # öznitelik çıkarımı için küçültme boyutu
+SKLEARN_GRID = 4               # 4x4 hücre ortalama renkleri
+
+
+def _extract_features(image_path: str):
+    """
+    Bir ekran görüntüsünden renk-tabanlı öznitelik vektörü çıkarır.
+    Sınıf sinyali ağırlıkla panel renklerinde (yeşil/sarı/kırmızı) ve özellikle
+    WCA bölgesindedir. Öznitelikler:
+      • Genel ortalama R,G,B + kırmızı/sarı/yeşil piksel oranları
+      • WCA kutusu bölgesinde kırmızı/sarı/yeşil oranları
+      • 4x4 ızgara hücre ortalama RGB değerleri (48 öznitelik)
+    """
+    import numpy as np
+    try:
+        import cv2
+        img = cv2.imread(str(image_path))
+        if img is None:
+            return None
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    except Exception:
+        try:
+            from PIL import Image
+            img = np.asarray(Image.open(image_path).convert("RGB"))
+        except Exception:
+            return None
+
+    H, W = img.shape[:2]
+    arr = img.astype(np.float32)
+
+    def color_fracs(block):
+        r, g, b = block[:, :, 0], block[:, :, 1], block[:, :, 2]
+        bright = np.maximum(np.maximum(r, g), b) > 60
+        red    = bright & (r > g + 30) & (r > b + 30)
+        yellow = bright & (r > b + 30) & (g > b + 30) & (np.abs(r - g) < 60)
+        green  = bright & (g > r + 25) & (g > b + 15)
+        n = max(block.shape[0] * block.shape[1], 1)
+        return [float(red.sum()) / n, float(yellow.sum()) / n, float(green.sum()) / n]
+
+    feats = []
+    # Genel istatistik
+    feats += [float(arr[:, :, 0].mean()) / 255.0,
+              float(arr[:, :, 1].mean()) / 255.0,
+              float(arr[:, :, 2].mean()) / 255.0]
+    feats += color_fracs(arr)
+
+    # WCA bölgesi
+    cx, cy, bw, bh = WCA_BOX
+    x0 = int((cx - bw / 2) * W); x1 = int((cx + bw / 2) * W)
+    y0 = int((cy - bh / 2) * H); y1 = int((cy + bh / 2) * H)
+    x0, x1 = max(0, x0), min(W, x1); y0, y1 = max(0, y0), min(H, y1)
+    wca = arr[y0:y1, x0:x1] if (x1 > x0 and y1 > y0) else arr
+    feats += color_fracs(wca)
+
+    # 4x4 ızgara ortalama RGB
+    gh, gw = H // SKLEARN_GRID, W // SKLEARN_GRID
+    for i in range(SKLEARN_GRID):
+        for j in range(SKLEARN_GRID):
+            cell = arr[i * gh:(i + 1) * gh, j * gw:(j + 1) * gw]
+            if cell.size == 0:
+                feats += [0.0, 0.0, 0.0]
+            else:
+                feats += [float(cell[:, :, 0].mean()) / 255.0,
+                          float(cell[:, :, 1].mean()) / 255.0,
+                          float(cell[:, :, 2].mean()) / 255.0]
+    return np.asarray(feats, dtype=np.float32)
+
+
+def _load_xy(img_dir, lbl_dir):
+    import numpy as np
+    X, y = [], []
+    for ip in sorted(Path(img_dir).glob("*.png")):
+        lp = Path(lbl_dir) / (ip.stem + ".txt")
+        if not lp.exists():
+            continue
+        try:
+            cid = int(lp.read_text().split()[0])
+        except Exception:
+            continue
+        f = _extract_features(str(ip))
+        if f is not None:
+            X.append(f); y.append(cid)
+    if not X:
+        return np.empty((0, 0)), np.empty((0,))
+    return np.vstack(X), np.asarray(y)
+
+
+def _train_sklearn(version: str, class_weights: list) -> str:
+    """RandomForest ile gerçek eğitim. Model .pkl olarak kaydedilir."""
+    import numpy as np
+    import pickle
+    from sklearn.ensemble import RandomForestClassifier
+
+    print("  [RF] scikit-learn RandomForest eğitimi (renk-öznitelik tabanlı)...")
+    Xtr, ytr = _load_xy(TRAIN_IMG, TRAIN_LBL)
+    if Xtr.shape[0] == 0:
+        raise RuntimeError("sklearn: eğitim özniteliği çıkarılamadı")
+
+    cw = {i: float(class_weights[i]) for i in range(len(class_weights))}
+    clf = RandomForestClassifier(
+        n_estimators=200, max_depth=None, min_samples_leaf=1,
+        class_weight=cw, random_state=42, n_jobs=-1,
+    )
+    clf.fit(Xtr, ytr)
+    train_acc = float(clf.score(Xtr, ytr))
+    print(f"     train accuracy = {train_acc:.3f}  (n_train={Xtr.shape[0]})")
+
+    vdir = MODEL_DIR / version
+    vdir.mkdir(exist_ok=True)
+    mp = vdir / "model.pkl"
+    with open(mp, "wb") as f:
+        pickle.dump({
+            "clf": clf,
+            "classes": CLASS_NAMES,
+            "version": version,
+            "backend": "sklearn_rf",
+            "feature_grid": SKLEARN_GRID,
+            "train_acc": train_acc,
+        }, f)
     return str(mp)
 
 
@@ -800,7 +966,7 @@ td:first-child{{text-align:left;color:#ccc}}
 
     path = METRICS_DIR / f"{version}_report.html"
     path.write_text(html, encoding="utf-8")
-    print(f"  📊 HTML rapor: {path}")
+    print(f"  [HTML] HTML rapor: {path}")
     return str(path)
 
 
@@ -951,7 +1117,7 @@ def _generate_pdf_report(version, metrics, ds_summary, weights) -> str:
     ))
 
     doc.build(story)
-    print(f"  📄 PDF rapor : {pdf_path}")
+    print(f"  [PDF] PDF rapor : {pdf_path}")
     return pdf_path
 
 
@@ -960,7 +1126,9 @@ def _generate_pdf_report(version, metrics, ds_summary, weights) -> str:
 def predict(screenshot_path: str, model_path: Optional[str] = None) -> dict:
     if model_path is None:
         for cand in [
+            MODEL_DIR / "latest.pkl",
             MODEL_DIR / "latest.pt",
+            *sorted(MODEL_DIR.glob("tusas_v*/model.pkl"), reverse=True)[:1],
             *sorted(MODEL_DIR.glob("tusas_v*/best.pt"), reverse=True)[:1],
         ]:
             if Path(cand).exists():
@@ -971,17 +1139,50 @@ def predict(screenshot_path: str, model_path: Optional[str] = None) -> dict:
 
     t0 = time.time()
 
-    if "weights" in str(model_path) or str(model_path).endswith("last.pt"):
-        # YOLO
+    # scikit-learn (.pkl)
+    if str(model_path).endswith(".pkl"):
         try:
-            from ultralytics import YOLO
-            r = YOLO(model_path)(screenshot_path, verbose=False)[0]
-            ci = int(r.probs.top1)
-            cf = float(r.probs.top1conf)
-            return {"class": CLASS_NAMES[ci], "confidence": round(cf,4),
-                    "anomaly": cf<0.6, "ms": int((time.time()-t0)*1000), "model": "yolo"}
+            import pickle
+            with open(model_path, "rb") as f:
+                bundle = pickle.load(f)
+            clf = bundle["clf"]
+            feat = _extract_features(screenshot_path)
+            if feat is None:
+                return {"error": "öznitelik çıkarılamadı"}
+            import numpy as np
+            probs = clf.predict_proba(feat.reshape(1, -1))[0]
+            # predict_proba sınıf sırası clf.classes_ ile hizalı
+            classes = list(clf.classes_)
+            best = int(np.argmax(probs))
+            ci = int(classes[best]); cf = float(probs[best])
+            return {"class": CLASS_NAMES[ci], "confidence": round(cf, 4),
+                    "anomaly": cf < 0.6, "ms": int((time.time() - t0) * 1000),
+                    "model": bundle.get("backend", "sklearn_rf")}
         except Exception as e:
             return {"error": str(e)}
+
+    # YOLO model check (any .pt file that is not a custom PyTorch checkpoint)
+    if str(model_path).endswith(".pt"):
+        is_custom_pytorch = False
+        try:
+            import torch
+            ckpt = torch.load(model_path, map_location="cpu")
+            if isinstance(ckpt, dict) and "model_state" in ckpt:
+                is_custom_pytorch = True
+        except Exception:
+            pass
+
+        if not is_custom_pytorch:
+            try:
+                from ultralytics import YOLO
+                r = YOLO(model_path)(screenshot_path, verbose=False)[0]
+                ci = int(r.probs.top1)
+                cf = float(r.probs.top1conf)
+                cname = r.names[ci]
+                return {"class": cname, "confidence": round(cf,4),
+                        "anomaly": cf<0.6, "ms": int((time.time()-t0)*1000), "model": "yolo"}
+            except Exception as e:
+                return {"error": str(e)}
 
     # PyTorch
     try:
@@ -1329,7 +1530,7 @@ print(f"Top-5 Accuracy: {metrics.top5:.3f}")
     nb_path = str(BASE_DIR / "TUSAS_Colab_Training.ipynb")
     with open(nb_path, "w", encoding="utf-8") as f:
         json.dump(nb, f, ensure_ascii=False, indent=2)
-    print(f"  ✅ Colab notebook: {nb_path}")
+    print(f"  [OK] Colab notebook: {nb_path}")
     return nb_path
 
 
@@ -1356,7 +1557,7 @@ def _count_classes(log):
 
 def _print_progress_bar(cur, total, prefix="", suffix="", length=30):
     filled = int(length * cur / max(total,1))
-    bar = "█"*filled + "░"*(length-filled)
+    bar = "#"*filled + "-"*(length-filled)
     pct = cur / max(total,1) * 100
     print(f"\r{prefix} [{bar}] {pct:5.1f}%  {suffix}      ", end="", flush=True)
     if cur == total: print()
@@ -1379,7 +1580,7 @@ def list_versions():
     mfs = sorted(METRICS_DIR.glob("*_metrics.json"), reverse=True)
     if not mfs: print("  Henüz model yok."); return
     print(f"\n  {'Versiyon':<30} {'Accuracy':>10} {'Örnekler':>10}")
-    print(f"  {'─'*55}")
+    print(f"  {'-'*55}")
     for mf in mfs:
         try:
             d = json.loads(mf.read_text())
@@ -1408,7 +1609,7 @@ if __name__ == "__main__":
         print(f"  Toplam  : {s['total']}")
         w = _compute_class_weights(_load_log())
         print(f"  Weights : NOM={w[0]} CAU={w[1]} WARN={w[2]}")
-        print(f"  Hazır   : {'EVET ✅' if s['ready_to_train'] else f'HAYIR ({s[chr(116)+(chr(111)+chr(116)+(chr(97)+chr(108)))]})'}")
+        print(f"  Hazır   : {'EVET [OK]' if s['ready_to_train'] else f'HAYIR ({s[chr(116)+(chr(111)+chr(116)+(chr(97)+chr(108)))]})'}")
 
     elif cmd == "generate":
         n = int(sys.argv[2]) if len(sys.argv)>2 else 40
@@ -1428,7 +1629,7 @@ if __name__ == "__main__":
         r = predict(sys.argv[2])
         if "error" in r: print(f"  HATA: {r['error']}")
         else:
-            flag = "  ⚠️  ANOMALY" if r.get("anomaly") else ""
+            flag = "  [WARNING]  ANOMALY" if r.get("anomaly") else ""
             print(f"\n  Tahmin  : {r['class']}")
             print(f"  Güven   : {r['confidence']*100:.1f}%{flag}")
             print(f"  Süre    : {r['ms']}ms")

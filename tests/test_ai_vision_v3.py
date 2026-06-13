@@ -636,6 +636,8 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
         print(f"\n  [!] Test sonucu yok — boş rapor oluşturuldu: {html_path}")
 
     # Dosya kesinlikle var, şimdi aç
+    if os.environ.get("TUSAS_NO_OPEN_REPORT") == "1":
+        return
     if not os.path.exists(html_path):
         print(f"  [!] Rapor dosyası bulunamadı: {html_path}")
         return

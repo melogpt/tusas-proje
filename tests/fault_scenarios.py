@@ -385,3 +385,26 @@ CATEGORY_COLORS = {
     "HYDRAULIC":     "#FF69B4",
     "ROTOR":         "#DA70D6",
 }
+
+import random
+
+# Senaryo sırasını rastgele karıştır (Her test çalışmasında farklı sıra)
+random.shuffle(SCENARIOS)
+
+# "Hata sayısını çeşitlendirip farklı hataları seçme" isteğine uygun olarak,
+# her testte 34 senaryonun tamamını değil, rastgele 15 ile 25 arasında senaryoyu seçiyoruz.
+num_scenarios_to_run = random.randint(15, 25)
+SCENARIOS = SCENARIOS[:num_scenarios_to_run]
+
+# İnjekte edilen sayısal değerlere küçük ve güvenli rastgele sapmalar ekle
+for sc in SCENARIOS:
+    for k, v in sc.inject.items():
+        if v == 0.0:
+            sc.inject[k] = round(random.uniform(0.1, 0.9), 1)
+        elif v == 100.0:
+            sc.inject[k] = round(random.uniform(99.1, 99.9), 1)
+        else:
+            # -0.8 ile +0.8 arasında rastgele sapma
+            # Sayı küçükse sapmayı daha da küçült ki limit sınırını geçmesin
+            jitter = random.uniform(-0.8, 0.8) if abs(v) > 10 else random.uniform(-0.3, 0.3)
+            sc.inject[k] = round(v + jitter, 1)

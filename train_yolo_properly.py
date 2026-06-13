@@ -37,7 +37,8 @@ model = YOLO("yolov8n-cls.pt")
 print("Training YOLO...")
 model.train(
     data=str(YOLO_DIR.absolute()),
-    epochs=20, imgsz=224, batch=32,
+    epochs=8, imgsz=224, batch=32,
+    patience=3, amp=True,
     device="mps",
     project="ml_models", name="yolo_fast_train",
     exist_ok=True

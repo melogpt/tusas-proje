@@ -68,6 +68,10 @@ def get_widget_bbox(widget, root_window) -> Optional[Tuple[int, int, int, int]]:
     if not HAS_QT or widget is None or root_window is None:
         return None
     try:
+        from PyQt5.QtCore import QPoint
+        # Map directly to root window's client coordinates.
+        # This matches the coordinate space of root_window.grab() exactly,
+        # avoiding OS title bar and frame border offsets in both standard and offscreen modes.
         pos = widget.mapTo(root_window, QPoint(0, 0))
         return (pos.x(), pos.y(), widget.width(), widget.height())
     except Exception:
