@@ -132,6 +132,7 @@ def _inject_known_render_fault(pencere, scenario, idx: int) -> str:
     else:
         available_fts.append("wrong_number")
         if hasattr(w, "lbl_val"):
+            available_fts.append("wrong_subtle")
             cur = w.lbl_val.text()
             if "C" in cur or "%" in cur or "PSI" in cur:
                 available_fts.append("wrong_unit")
@@ -177,6 +178,10 @@ def _inject_known_render_fault(pencere, scenario, idx: int) -> str:
             from PyQt5.QtGui import QColor
             w.bar._color = QColor("#800080")
             w.bar.update()
+    elif ft == "wrong_subtle":
+        if hasattr(w, "lbl_val"):
+            cur = pencere.vals.get(target_key, 0)
+            w.lbl_val.setText(f"{cur + 0.2:.1f}")
     elif ft == "false_valid":
         if hasattr(w, "set_invalid"):
             w.set_invalid(False)
@@ -397,7 +402,13 @@ def _save_html():
 
     rows = []
     global_seen_failures = set()
+    global_seen_misses = set()
     for r in _results:
+        if detector_mode and not r.passed and r.injected_fault:
+            if r.injected_fault in global_seen_misses:
+                continue
+            global_seen_misses.add(r.injected_fault)
+
         if detector_mode and r.passed:
             badge = "YAKALANDI"
             color = "#3498db"

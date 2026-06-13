@@ -151,6 +151,8 @@ def detect_dominant_color(crop: "Image.Image") -> str:
         return "blue"
     if mr > 150 and mg > 150 and mb > 150:
         return "white"
+    if mr > 100 and mb > 100 and mg < 80:
+        return "#800080"
     return "unknown"
 
 
