@@ -89,13 +89,13 @@ def _get_cropped_b64(pil_img, bbox) -> str:
         print(f"Error cropping image: {e}")
         return ""
 
-
+_fault_counts = {}
 
 def _inject_known_render_fault(pencere, scenario, idx: int) -> str:
     """
     Dedektör öz-testi için, dürüst kontrollerin YAKALAMASI gereken, açıkça
     tanımlı bir render hatası enjekte eder. Her hata tipi belirli bir kontrole
-    eşlenir; böylece testin boş olmadığı kanıtlanır:
+    eşlenir; böylece testin boş olmadığını kanıtlar:
       • wrong_number → model_value
       • wrong_unit   → model_value (birim)
       • wrong_fill   → bar_fill_render
@@ -142,7 +142,10 @@ def _inject_known_render_fault(pencere, scenario, idx: int) -> str:
             available_fts.append("wrong_color")
 
     import random
-    ft = random.choice(available_fts)
+    random.shuffle(available_fts)
+    available_fts.sort(key=lambda f: _fault_counts.get(f, 0))
+    ft = available_fts[0]
+    _fault_counts[ft] = _fault_counts.get(ft, 0) + 1
 
     if ft == "wrong_number":
         vmax = getattr(spec, "vmax", None)
