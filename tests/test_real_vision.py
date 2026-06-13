@@ -123,7 +123,7 @@ def _inject_known_render_fault(pencere, scenario, idx: int) -> str:
 
     if target_key is None:
         pencere.lbl_anti.setText("ERR")
-        return "bad_anti"
+        return "ANTI_ICE (bad_anti)"
 
     spec = getattr(w, "spec", w)
     available_fts = []
@@ -184,7 +184,7 @@ def _inject_known_render_fault(pencere, scenario, idx: int) -> str:
             vmin = getattr(spec, "vmin", 0)
             w.lbl_val.setText(f"{vmin:.{getattr(spec, 'decimals', 1)}f} {getattr(spec, 'unit', '')}".strip())
 
-    return ft
+    return f"{target_key} ({ft})"
 
 
 
@@ -204,6 +204,7 @@ class ScenarioResult:
     screenshot_path: str = ""
     duration_ms: int = 0
     detector_caught: bool = None   # --inject-faults modunda anlamlı
+    injected_fault: str = ""
 
 
 _results: List[ScenarioResult] = []
@@ -329,6 +330,7 @@ def test_real_vision(pencere, scenario, request):
         passed=(len(failed) == 0), n_hard=len(hard), n_failed=len(failed),
         failures=failed,
         checks=checks_dump, screenshot_path=ss_path, duration_ms=dt,
+        injected_fault=injected_fault or "",
     )
 
     if inject_mode:
@@ -404,8 +406,12 @@ def _save_html():
             color = "#1b7f3b" if r.passed else "#b22222"
         det = ""
         if r.detector_caught is not None:
-            det = ("✓ hata yakalandı" if r.detector_caught
-                   else "✗ hata KAÇIRILDI")
+            if r.detector_caught:
+                det = "✓ hata yakalandı"
+            else:
+                det = "✗ hata KAÇIRILDI"
+                if r.injected_fault:
+                    det += f"<br><span style='color:#d29922;font-size:11px;margin-top:4px;display:inline-block;'>Enjekte edilen:<br><b>{r.injected_fault}</b></span>"
         fail_html = ""
         if r.failures:
             items = []
