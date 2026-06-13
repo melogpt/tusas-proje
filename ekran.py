@@ -134,7 +134,7 @@ class FlightDisplay(QMainWindow):
         self.lbl_pitot = make_label("ON", color="#00FF66", bold=True)
         g.addWidget(self.lbl_pitot, 1, 1, alignment=Qt.AlignRight)
         g.addWidget(make_label("ANTI-ICE"), 2, 0)
-        self.lbl_anti = make_label("AUTO", color="#00FF66", bold=True)
+        self.lbl_anti = make_label("AUTO", align=Qt.AlignCenter, color="#00FF66", bold=True)
         g.addWidget(self.lbl_anti, 2, 1, alignment=Qt.AlignRight)
         return box
 
