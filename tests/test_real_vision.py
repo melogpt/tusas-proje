@@ -122,8 +122,6 @@ def _select_failure_crop_bbox(
 
 
 def _failure_proof_note(check_name: str) -> str:
-    if check_name in {"bar_color_render", "bar_fill_render"}:
-        return "Sayı etiketi referans için görünür; beklenen/gerçek karşılaştırması bar ölçümüne aittir."
     return ""
 
 
@@ -671,7 +669,11 @@ def _save_html():
                     f"gerçek <code>{f['actual']}</code>"
                 )
                 if f.get('note'):
-                    item_html += f"<br><span class='note'>{f['note']}</span>"
+                    extra = (
+                        " Bar doluluk ölçümü piksel analizi ile yapılır; sayısal etiket yalnızca referans içindir."
+                        if f['name'] == "bar_fill_render" else ""
+                    )
+                    item_html += f"<br><span class='note'>{f['note']}{extra}</span>"
                 
                 # Add side-by-side cropped images, deduplicated by visual signature
                 nom_b64 = f.get('nominal_crop_b64') or ''
