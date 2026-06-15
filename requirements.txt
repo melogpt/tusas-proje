@@ -1,0 +1,32 @@
+# ==============================================================================
+# TUSAS TestLab - Bağımlılıklar
+# Kurulum: pip install -r requirements.txt
+# ==============================================================================
+
+# ── Arayüz & Ses ──────────────────────────────────────────────────────────────
+PyQt5
+SpeechRecognition
+pyttsx3
+pyaudio                 # Windows'ta PortAudio gerektirir. Python 3.14+ sanal ortamlarda hata verebilir, global ortam önerilir.
+
+# ── Test & Doğrulama ──────────────────────────────────────────────────────────
+pytest
+pytest-qt
+
+# ── AI Vision & OCR ───────────────────────────────────────────────────────────
+numpy
+opencv-python-headless
+Pillow
+pytesseract             # Sistemde Tesseract-OCR binary dosyasının kurulu olması gerekmektedir (UB-Mannheim veya Homebrew).
+
+# ── ML Eğitimi & Sınıflandırma ─────────────────────────────────────────────────
+scikit-learn            # RandomForestClassifier ve model eğitimi özellikleri için zorunludur.
+
+# ── PDF & Raporlama ───────────────────────────────────────────────────────────
+reportlab
+
+# ── (OPSİYONEL) Üst Seviye ML Backend'leri ──────────────────────────────────────
+# Daha yüksek doğruluk / YOLO tespiti istenirse kurabilirsiniz.
+# ultralytics
+# torch
+# torchvision
